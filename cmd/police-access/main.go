@@ -17,5 +17,6 @@ func main() {
 	router.HandleFunc("/officers/{id}", internal.UpdateOfficer).Methods("PUT")
 	router.HandleFunc("/officers", internal.CreateOfficer).Methods("POST")
 	router.HandleFunc("/officers/{id}", internal.DeleteOfficer).Methods("DELETE")
+
 	http.ListenAndServe(":8080", router)
 }
