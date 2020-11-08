@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -19,17 +18,6 @@ type Message struct {
 	CONTENT string
 }
 
-var officers []Officer
-
-func dbConn() (db *sql.DB) {
-	db, err := sql.Open("mysql", "root:root@tcp(127.0.0.1:3306)/golang")
-	if err != nil {
-		panic(err.Error())
-	}
-
-	return db
-}
-
 func respondWithJSON(w http.ResponseWriter, code int, message interface{}) {
 	response, _ := json.Marshal(message)
 	w.Header().Set("Content-Type", "application/json")
@@ -45,6 +33,7 @@ func GetOfficers(w http.ResponseWriter, r *http.Request) {
 		panic(err.Error())
 	}
 
+	officers := []Officer{}
 	officer := Officer{}
 	for selResult.Next() {
 		var id int
@@ -57,7 +46,7 @@ func GetOfficers(w http.ResponseWriter, r *http.Request) {
 		officer.NAME = name
 		officers = append(officers, officer)
 	}
-
+	defer db.Close()
 	json.NewEncoder(w).Encode(&officers)
 }
 
@@ -86,7 +75,7 @@ func GetOfficer(w http.ResponseWriter, r *http.Request) {
 		officer.ID = id
 		officer.NAME = name
 	}
-
+	defer db.Close()
 	json.NewEncoder(w).Encode(&officer)
 }
 
@@ -113,6 +102,7 @@ func UpdateOfficer(w http.ResponseWriter, r *http.Request) {
 		panic(err.Error())
 	}
 	updateResult.Exec(officer.NAME, officer.ID)
+	defer db.Close()
 	fmt.Println("UPDATE: Name: " + officer.NAME + " for ID:" + strconv.Itoa(officer.ID))
 	json.NewEncoder(w).Encode(&officer)
 }
@@ -122,8 +112,6 @@ func CreateOfficer(w http.ResponseWriter, r *http.Request) {
 	var officer Officer
 	_ = json.NewDecoder(r.Body).Decode(&officer)
 
-	//officer.ID = strconv.Itoa(rand.Intn(1000000))
-	officers = append(officers, officer)
 	json.NewEncoder(w).Encode(&officer)
 
 	db := dbConn()
@@ -135,7 +123,7 @@ func CreateOfficer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err.Error())
 	}
-	fmt.Println("Officer '" + officer.NAME + "' is deleted")
+	fmt.Println("Officer '" + officer.NAME + "' is created")
 	defer db.Close()
 }
 
@@ -157,6 +145,7 @@ func DeleteOfficer(w http.ResponseWriter, r *http.Request) {
 	messageContent := "officer with ID: " + params["id"] + " is deleted"
 	fmt.Println(messageContent)
 
+	defer db.Close()
 	message := Message{}
 	message.CONTENT = messageContent
 	json.NewEncoder(w).Encode(&message)
