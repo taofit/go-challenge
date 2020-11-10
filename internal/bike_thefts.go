@@ -3,6 +3,8 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -30,7 +32,7 @@ func CreateCase(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&theftCase)
 
 	if theftCase.TITLE == "" || theftCase.BRAND == "" || theftCase.CITY == "" || theftCase.DESCRIPTION == "" {
-		respondWithJSON(w, http.StatusBadRequest, "Some fields are missing please enter then again")
+		respondWithJSON(w, http.StatusBadRequest, "Some fields are missing please enter them again")
 		return
 	}
 
@@ -44,8 +46,12 @@ func CreateCase(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondWithJSON(w, http.StatusBadRequest, err.Error())
 	}
-	fmt.Println("Bike theft '" + theftCase.TITLE + "' is created")
 	defer db.Close()
+	// uploadFile(w, r)
+
+	message := "Bike theft: '" + theftCase.TITLE + "' is created"
+	log.Println(message)
+	respondWithJSON(w, http.StatusAccepted, message)
 }
 
 func GetCases(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +74,7 @@ func GetCases(w http.ResponseWriter, r *http.Request) {
 		err = selResult.Scan(&theftCase.ID, &theftCase.TITLE, &theftCase.BRAND,
 			&theftCase.CITY, &theftCase.DESCRIPTION, &theftCase.REPORTED, &theftCase.UPDATED, &theftCase.SOLVED, &officerId, &officerName)
 		if err != nil {
-			respondWithJSON(w, http.StatusBadRequest, err.Error())
+			panic(err.Error())
 		}
 		theftCase.OFFICER.ID = officerId
 		theftCase.OFFICER.NAME = officerName
@@ -83,6 +89,7 @@ func GetCase(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	params := mux.Vars(r)
 	id, err := strconv.Atoi(params["id"])
+
 	if err != nil {
 		respondWithJSON(w, http.StatusBadRequest, err.Error())
 		return
@@ -91,23 +98,21 @@ func GetCase(w http.ResponseWriter, r *http.Request) {
 	db := dbConn()
 	var officerId int
 	var officerName string
-	selResult, err := db.Query(`SELECT bt.id, bt.title, bt.brand, bt.city, bt.description, bt.reported, bt.updated, bt.solved, IFNULL(o.id, 0), IFNULL(o.name, '')
+	selResult := db.QueryRow(`SELECT bt.id, bt.title, bt.brand, bt.city, bt.description, bt.reported, bt.updated, bt.solved, IFNULL(o.id, 0), IFNULL(o.name, '')
 								FROM bike_thefts bt
 								LEFT JOIN officers o
 								ON o.id = bt.officer
 								WHERE bt.id=?`, id)
-	if err != nil {
-		panic(err.Error())
-	}
 
 	theftCase := TheftCase{}
-	for selResult.Next() {
-		err = selResult.Scan(&theftCase.ID, &theftCase.TITLE, &theftCase.BRAND,
-			&theftCase.CITY, &theftCase.DESCRIPTION, &theftCase.REPORTED, &theftCase.UPDATED, &theftCase.SOLVED, &officerId, &officerName)
-		if err != nil {
-			panic(err.Error())
-		}
+
+	err = selResult.Scan(&theftCase.ID, &theftCase.TITLE, &theftCase.BRAND,
+		&theftCase.CITY, &theftCase.DESCRIPTION, &theftCase.REPORTED, &theftCase.UPDATED, &theftCase.SOLVED, &officerId, &officerName)
+
+	if err != nil {
+		respondWithJSON(w, http.StatusBadRequest, err.Error())
 	}
+
 	defer db.Close()
 	theftCase.OFFICER.ID = officerId
 	theftCase.OFFICER.NAME = officerName
@@ -132,18 +137,50 @@ func UpdateCase(w http.ResponseWriter, r *http.Request) {
 	db := dbConn()
 	updateResult, err := db.Prepare("UPDATE bike_thefts SET solved=? WHERE id=?")
 	if err != nil {
-		panic(err.Error())
+		respondWithJSON(w, http.StatusBadRequest, err.Error())
 	}
 	_, err = updateResult.Exec(theftCase.SOLVED, id)
 	if err != nil {
-		panic(err.Error())
+		respondWithJSON(w, http.StatusBadRequest, err.Error())
 	}
 	defer db.Close()
+
 	resolved := "unresolved"
 	if theftCase.SOLVED {
 		resolved = "resolved"
 	}
 	message := "UPDATE bike theft ID:" + strconv.Itoa(theftCase.ID) + " to " + resolved
-	fmt.Println(message)
+	log.Println(message)
 	respondWithJSON(w, http.StatusBadRequest, message)
+}
+
+func UploadFile(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("File Upload Endpoint Hit")
+	r.ParseMultipartForm(10 << 20)
+
+	file, handler, err := r.FormFile("image")
+	if err != nil {
+		fmt.Println("error retrieving the file")
+		fmt.Println(err)
+		return
+	}
+	defer file.Close()
+	fmt.Printf("Uploaded File: %+v\n", handler.Filename)
+	fmt.Printf("File Size: %+v\n", handler.Size)
+	fmt.Printf("MIME Header: %+v\n", handler.Header)
+
+	tempFile, err := ioutil.TempFile("temp-images", "upload-*.png")
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer tempFile.Close()
+
+	fileBytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		fmt.Println(err)
+	}
+	// write this byte array to our temporary file
+	tempFile.Write(fileBytes)
+	// return that we have successfully uploaded our file!
+	fmt.Fprintf(w, "Successfully Uploaded File\n")
 }

@@ -2,7 +2,7 @@ package internal
 
 import (
 	"encoding/json"
-	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -13,9 +13,6 @@ import (
 type Officer struct {
 	ID   int    `json:"id"`
 	NAME string `json:"name"`
-}
-type Message struct {
-	CONTENT string
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, message interface{}) {
@@ -30,7 +27,7 @@ func GetOfficers(w http.ResponseWriter, r *http.Request) {
 	db := dbConn()
 	selResult, err := db.Query("SELECT * FROM officers ORDER BY id DESC")
 	if err != nil {
-		panic(err.Error())
+		respondWithJSON(w, http.StatusBadRequest, err.Error())
 	}
 
 	officers := []Officer{}
@@ -60,21 +57,18 @@ func GetOfficer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := dbConn()
-	selResult, err := db.Query("SELECT * FROM officers WHERE id=?", id)
+	selResult := db.QueryRow("SELECT * FROM officers WHERE id=?", id)
+	officer := Officer{}
+
+	var name string
+	err = selResult.Scan(&id, &name)
+
 	if err != nil {
 		panic(err.Error())
 	}
-	officer := Officer{}
-	for selResult.Next() {
-		var id int
-		var name string
-		err = selResult.Scan(&id, &name)
-		if err != nil {
-			panic(err.Error())
-		}
-		officer.ID = id
-		officer.NAME = name
-	}
+	officer.ID = id
+	officer.NAME = name
+
 	defer db.Close()
 	json.NewEncoder(w).Encode(&officer)
 }
@@ -103,16 +97,20 @@ func UpdateOfficer(w http.ResponseWriter, r *http.Request) {
 	}
 	updateResult.Exec(officer.NAME, officer.ID)
 	defer db.Close()
-	fmt.Println("UPDATE: Name: " + officer.NAME + " for ID:" + strconv.Itoa(officer.ID))
-	json.NewEncoder(w).Encode(&officer)
+
+	message := "UPDATE: Name: " + officer.NAME + " for ID:" + strconv.Itoa(officer.ID)
+	log.Println(message)
+	respondWithJSON(w, http.StatusAccepted, message)
 }
 
 func CreateOfficer(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var officer Officer
-	_ = json.NewDecoder(r.Body).Decode(&officer)
-
-	json.NewEncoder(w).Encode(&officer)
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&officer); err != nil {
+		respondWithJSON(w, http.StatusBadRequest, "Invalid request officer")
+		return
+	}
 
 	db := dbConn()
 	insert, err := db.Prepare("INSERT INTO officers(name) VALUES(?)")
@@ -123,8 +121,11 @@ func CreateOfficer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		panic(err.Error())
 	}
-	fmt.Println("Officer '" + officer.NAME + "' is created")
 	defer db.Close()
+
+	message := "Officer '" + officer.NAME + "' is created"
+	log.Println(message)
+	respondWithJSON(w, http.StatusAccepted, message)
 }
 
 func DeleteOfficer(w http.ResponseWriter, r *http.Request) {
@@ -142,11 +143,9 @@ func DeleteOfficer(w http.ResponseWriter, r *http.Request) {
 		panic(err.Error())
 	}
 	delResult.Exec(id)
-	messageContent := "officer with ID: " + params["id"] + " is deleted"
-	fmt.Println(messageContent)
-
 	defer db.Close()
-	message := Message{}
-	message.CONTENT = messageContent
-	json.NewEncoder(w).Encode(&message)
+
+	message := "officer with ID: " + params["id"] + " is deleted."
+	log.Println(message)
+	respondWithJSON(w, http.StatusAccepted, message)
 }
